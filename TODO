@@ -1,0 +1,8 @@
+- Make _raise_on_key_error and __str__ not take forever on large objects
+- Make it so you can't call dict() functions for future-proofness.
+- Add classmethods for larger mergings/operations on many dictionaries.
+- Allow for lambda on_collision method
+- Double check I've implemented all I need to
+- Add in apply() and aggregate() functions? (possibly class methods apply_all() and aggregate_all())
+- Allow for setting default values
+- Add all of the functionality into the docstring
