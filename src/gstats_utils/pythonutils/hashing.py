@@ -7,7 +7,8 @@ import copy
 import re
 from .equality import equal
 from _collections_abc import dict_values
-from typing import Any, Iterable, Iterator, NoReturn, Sequence, Union, Protocol, runtime_checkable, Optional
+from enum import Enum, unique as enum_unique, auto as enum_auto
+from typing import Any, Iterable, Iterator, MutableMapping, NoReturn, Sequence, Union, Protocol, runtime_checkable, Optional
 from typing_extensions import Self
 
 
@@ -20,8 +21,14 @@ class SupportsHashing(Protocol):
         pass
     
 
+# Type aliases for type hinting
+HashableObject = Any  # In case I want to add in a specific type hint for objects that can act as keys in HashableDict
+HashableKeyValuePair = tuple[HashableObject, HashableObject]
+HashDictLike = Union['HashableDict', dict[HashableObject, HashableObject], Iterable[HashableKeyValuePair]]
+ConflictMethod = Union[str, int, 'HashableDict.ConflictMethods']
 
-def hash_object(obj: Any, ordered: bool = False, method: str = 'sha256') -> int:
+
+def hash_object(obj: HashableObject, ordered: bool = False, method: str = 'sha256') -> int:
     """
     Hashes the given python object. Recursive-object safe. Can pass pre-made hasher objects for specific args/kwargs
         on creation, and can return the hasher object upon completion instead of hexdigest() if needed.
@@ -41,7 +48,7 @@ def hash_object(obj: Any, ordered: bool = False, method: str = 'sha256') -> int:
     return _hash_helper(obj, hasher=hasher, ordered=ordered, method=method, hashed_objects=set(), currently_hashing=set())
 
 
-def _hash_helper(obj: Any, hasher: SupportsHashing, ordered: bool, method: str, hashed_objects: set[int], currently_hashing: set[int]) -> int:
+def _hash_helper(obj: HashableObject, hasher: SupportsHashing, ordered: bool, method: str, hashed_objects: set[int], currently_hashing: set[int]) -> int:
     """
     Helper method for recursive hashing
     """
@@ -60,14 +67,15 @@ _RAISE_ERR_ON_NO_KEY = _RaiseErrorOnNoKey()
 # Special object for get() to set a default value that could not exist in the dictionary anyways
 _OBJECT_MISSING = object()
 
-HashDictLike = Union[dict[Any, Any], Iterable[Sequence[Any, Any]]]
-ConflictMethod = Union[str, int]
 
-
-class HashableDict(dict):
+class HashableDict(dict[HashableObject, HashableObject]):
     """
     A dictionary that is inherently hashable, and can handle some 'non-hashable' keys, but is likely far slower than
         the default dict() and uses more memory.
+    
+    Currently using type hints of HashableObjects for keys, as well as values due to the flip()/invert() operation. This
+        is currently just an alias for Any, but that may change in the future. This inherets from dict instead of a
+        plain MutableMapping just because I want isinstance(HashableDict(), dict) to be True.
     
     Features:
         - Hashable
@@ -77,24 +85,19 @@ class HashableDict(dict):
     
     Inner Workings:
     This is essentially just two dictionaries: one to keep track of key hashes (and map them to their associated key
-        objects), and one to keep track of values (which are mapped to by those same key hashes). Since this object
-        inherits from dict(), one of those dictionaries can exist inherently as self (this is the 'values' dictionary).
-        The other dictinary (the 'keys' dictionary) is save in the self._key_hashes_to_keys dictionary. So:
-
-        self: a dictionary that maps key_hashes -> values
-        self._key_hashes_to_keys: a dictionary that maps key_hashes -> keys
-
-        Where key_hashes is always a string hash of the keys and thus can be used as a normal dictionary's key
+        objects), and one to keep track of values (which are mapped to by those same key hashes).
     
     There is ~some~ extra memory taken up due to using multiple dictionaries, but it should be relatively small since
         the key hashes are immutable strings and the same reference is used when inserting objects, thus only the
         reference is copied as a key in both dictionaries, not the entire string.
     """
-    CONFLICT_RAISE_ERROR = 0
-    CONFLICT_KEEP_LEFT = 1
-    CONFLICT_KEEP_RIGHT = 2
-    CONFLICT_KEEP_BOTH = 3
-    CONFLICT_KEEP_SAME = 4
+    @enum_unique
+    class ConflictMethods(Enum):
+        RAISE_ERROR = r'(err(or)?|raise[ _-]?(err(or)?)?)'
+        KEEP_LEFT = r'(keep[ -_]?)?(left|self)'
+        KEEP_RIGHT = r'(keep[ -_]?)?(right|other)'
+        KEEP_ALL = r'(keep[ -_]?)?(both|tuple|all)'
+        KEEP_SAME = r'(keep[ -_]?)?(same)'
 
     def __init__(self, dict_input: Optional[HashDictLike] = None, ordered: bool = False) -> None:
         """
@@ -116,7 +119,8 @@ class HashableDict(dict):
             except TypeError:
                 raise TypeError("Cannot build HashableDict from input of type '%s', only None, dict, or iterable of length-2 sequences are allowed" % type(dict_input))
         
-        self._key_hashes_to_keys = {}  # Contains the extended object keys
+        self._keys: dict[str, HashableObject] = {}
+        self._values: dict[str, HashableObject] = {}
         self._ordered = ordered
         self._hash_method = 'sha256'
     
@@ -128,36 +132,37 @@ class HashableDict(dict):
         return copy.deepcopy(self)
     
     def clear(self) -> None:
-        self._key_hashes_to_keys.clear()
-        super().clear()
+        self._keys.clear()
+        self._values.clear()
     
     def keys(self) -> dict_values:
-        return self._key_hashes_to_keys.values()
+        return self._keys.values()
     
     def values(self) -> dict_values:
-        return super().values()
+        return self._values.values()
     
-    def items(self) -> zip[tuple[Any, Any]]:
-        return zip(self._key_hashes_to_keys.values(), self.values())
+    def items(self) -> zip[tuple[HashableObject, HashableObject]]:
+        return zip(self._keys.values(), self._values.values())
     
-    def _items_with_key_hashes(self) -> zip[tuple[Any, Any, str]]:
-        return zip(self._key_hashes_to_keys.values(), self.values(), self._key_hashes_to_keys.keys())
+    def _items_with_key_hashes(self) -> zip[tuple[HashableObject, HashableObject, str]]:
+        return zip(self._keys.values(), self._values.values(), self._keys.keys())
     
-    def _hash_key(self, key: Any) -> str:
+    def _hash_key(self, key: HashableObject) -> str:
         """
         Returns the string hash of the given key
         """
         return hash_object(key, ordered=self._ordered, method=self._hash_method)
     
-    def _set_key_with_hash(self, key: Any, newvalue: Any, key_hash: str) -> None:
+    def _set_key_with_hash(self, key: HashableObject, newvalue: HashableObject, key_hash: str) -> None:
         """
         Sets the given key to the given value, using the given key_hash. This saves us from having to hash the key
             multiple times in some instances. We deep copy the key as it should be "immutable"
         """
-        self._key_hashes_to_keys[key_hash] = copy.deepcopy(key)
-        super().__setitem__(key_hash, newvalue)
+        self._keys[key_hash] = copy.deepcopy(key)
+        self._values[key_hash] = newvalue
     
-    def _get_value_with_hash(self, key: Any, key_hash: str, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Any:
+    def _get_value_with_hash(self, key: HashableObject, key_hash: str, 
+        default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> HashableObject:
         """
         Gets the value with the given key_hash. This saves us from having to hash the key multiple times in some instances.
             Need the key in case we raise an error.
@@ -167,13 +172,13 @@ class HashableDict(dict):
             Otherwise if nothing is passed and the key does not exist, then a KeyError will be raised
         """
         try:
-            return self._key_hashes_to_keys[key_hash]
+            return self._values[key_hash]
         except KeyError:
             if default is _RAISE_ERR_ON_NO_KEY:
                 self._raise_key_error(key)
             return default
     
-    def _del_with_hash(self, key: Any, key_hash: str, raise_err: bool = True) -> None:
+    def _del_with_hash(self, key: HashableObject, key_hash: str, raise_err: bool = True) -> None:
         """
         Deletes the key/value with the given key_hash. This saves us from having to hash the key multiple times in some 
             instances. Need the key in case we raise an error.
@@ -183,8 +188,7 @@ class HashableDict(dict):
             and nothing will be deleted if the key does not exist in this dictionary
         """
         try:
-            del self._key_hashes_to_keys[key_hash]
-            super().__delitem__(key_hash)
+            del self._keys[key_hash], self._values[key_hash]
         except KeyError:
             if raise_err:
                 self._raise_key_error(key)
@@ -193,51 +197,34 @@ class HashableDict(dict):
         """
         Returns true if this dictionary contains the given key_hash, false otherwise
         """
-        return key_hash in self._key_hashes_to_keys
+        return key_hash in self._keys
     
     def _create_dict_with_same_kwargs(self, __other: Optional[HashDictLike] = None) -> Self:
         """
         Returns a new dictionary with the same kwargs this dictionary was given. Optionally can pass __other HashDictLike
             to fill this new dictionary with those values, otherwise will initialize empty.
         """
-        return HashableDict(__other, ordered=self.ordered)
+        return HashableDict(__other, ordered=self._ordered)
 
-    def __setitem__(self, key: Any, newvalue: Any) -> None:
+    def __setitem__(self, key: HashableObject, newvalue: HashableObject) -> None:
         """
         We deep copy the key as it should be "immutable"
         """
         self._set_key_with_hash(key, newvalue, self._hash_key(key))
 
-    def __getitem__(self, key: Any) -> Any:
+    def __getitem__(self, key: HashableObject) -> HashableObject:
         return self._get_value_with_hash(key, self._hash_key(key))
     
-    def __delitem__(self, key: Any) -> None:
+    def __delitem__(self, key: HashableObject) -> None:
         self._del_with_hash(self._hash_key(key))
     
-    def __contains__(self, key: Any) -> bool:
+    def __contains__(self, key: HashableObject) -> bool:
         return self._contains_key_hash(self._hash_key(key))
     
     def __len__(self) -> int:
-        return len(self._key_hashes_to_keys)
+        return len(self._keys)
     
-    @classmethod
-    def fromkeys(cls, keys: Iterable[Any], value: Optional[Any] = None, ordered: bool = False) -> Self:
-        """
-        Generates a new HashableDict from the given list of key objects. A value can optionally be passed as well which
-            will be used for each key (otherwise, values will be None).
-        :param keys: an iterable of key objects to use
-        :param value: if not None, then a single object to use as a value for all the keys. Otherwise if None, then all
-            keys will have None as their value
-        :param ordered: whether or not this HashableDict should be ordered
-        """
-        try:
-            dict_input = [(k, value) for k in keys]
-        except TypeError:
-            raise TypeError("Could not iterate through non-iterable type '%s' to generate keys." % type(keys))
-        
-        return HashableDict(dict_input=dict_input, ordered=ordered)
-    
-    def get(self, key: Any, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Any:
+    def get(self, key: HashableObject, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Union[HashableObject, Any]:
         """
         Attempts to get the value associated with the given key. If that key does not exist, then an error is raised 
             (unless default is passed, then that value will be returned)
@@ -252,7 +239,7 @@ class HashableDict(dict):
                 self._raise_key_error(key)
             return default
     
-    def pop(self, key: Any, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Any:
+    def pop(self, key: HashableObject, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Union[HashableObject, Any]:
         """
         Attempts to get the value associated with the given key, and subsequently delete it from this dictionary. If
             that key does not exist, then an error is raised (unless default is passed, then that value will be returned)
@@ -271,10 +258,10 @@ class HashableDict(dict):
                 self._raise_key_error(key)
             return default
     
-    def __iter__(self) -> Iterator[Any]:
+    def __iter__(self) -> Iterator[HashableObject]:
         return iter(self.keys())
     
-    def __reversed__(self) -> Iterator[Any]:
+    def __reversed__(self) -> Iterator[HashableObject]:
         return reversed(self.keys())
     
     def __or__(self, __value: HashDictLike) -> Self:
@@ -427,7 +414,7 @@ class HashableDict(dict):
             - 'right', 'keep_right', 'other', ... : keep the value in the other (right) object, reject the value in this
                 object (same functionality as self.update())
             - 'both', 'keep_both', 'tuple' : keep both values as a tuple of (this_value, other_value)
-            Could also be the associated HashableDict.[CONFLICT_METHOD] constant (EG: HashableDict.CONFLICT_RAISE_ERROR)
+            Could also be the associated HashableDict.ConflictMethods constant (EG: HashableDict.ConflictMethods.RAISE_ERROR)
         """
         __other: HashableDict = self._ensure_compatible_kwargs(__other)
         clean_cm = _get_hashable_dict_conflict_method(conflict_method, dont_allow='same')
@@ -439,12 +426,12 @@ class HashableDict(dict):
             # This saves us from having to hash the key multiple times
             self_v = self._get_value_with_hash(k, key_hash, default=_OBJECT_MISSING)
             
-            if clean_cm != HashableDict.CONFLICT_KEEP_RIGHT and self_v is not _OBJECT_MISSING:
-                if clean_cm == HashableDict.CONFLICT_KEEP_LEFT:
+            if clean_cm is not ConflictMethod.KEEP_RIGHT and self_v is not _OBJECT_MISSING:
+                if clean_cm is ConflictMethod.KEEP_LEFT:
                     continue
-                elif clean_cm == HashableDict.CONFLICT_KEEP_BOTH:
+                elif clean_cm is ConflictMethod.KEEP_ALL:
                     working_dict._set_key_with_hash(k, (self_v, v), key_hash)
-                elif clean_cm == HashableDict.CONFLICT_RAISE_ERROR:
+                elif clean_cm is ConflictMethod.RAISE_ERROR:
                     if equal(self_v, v):  # Don't raise error if the values are equal
                         continue
                     self._raise_key_error(k, err_message="Key exists in both left and right HashableDict's on union: %s")
@@ -452,7 +439,7 @@ class HashableDict(dict):
                     raise NotImplementedError
 
             # If self_v is _OBJECT_MISSING, then the given key 'k' in __other does not exist in this dictionary and we. Or,
-            #   if clean_cm is HashableDict.CONFLICT_KEEP_RIGHT
+            #   if clean_cm is ConflictMethod.KEEP_RIGHT
             else:
                 working_dict._set_key_with_hash(k, v, key_hash)
 
@@ -479,7 +466,7 @@ class HashableDict(dict):
                 - 'both', 'keep_both', 'tuple' : keep both values as a tuple of (this_value, other_value)
                 - 'same', 'keep_same': keep only the values that are the same in both dictionaries. Will call 
                     gstats_utils.pythonutils.equal() to determine equality
-            Could also be the associated HashableDict.[CONFLICT_METHOD] constant (EG: HashableDict.CONFLICT_RAISE_ERROR)
+            Could also be the associated HashableDict.ConflictMethods constant (EG: HashableDict.ConflictMethods.RAISE_ERROR)
         """
         __other: HashableDict = self._ensure_compatible_kwargs(__other)
         clean_cm = _get_hashable_dict_conflict_method(keep_value_method, dont_allow='raise')
@@ -489,13 +476,13 @@ class HashableDict(dict):
             other_v = __other._get_value_with_hash(k, key_hash, default=_OBJECT_MISSING)
 
             if other_v is not _OBJECT_MISSING:
-                if clean_cm == HashableDict.CONFLICT_KEEP_LEFT:
+                if clean_cm is ConflictMethod.KEEP_LEFT:
                     new_v = v
-                elif clean_cm == HashableDict.CONFLICT_KEEP_RIGHT:
+                elif clean_cm is ConflictMethod.KEEP_RIGHT:
                     new_v = other_v
-                elif clean_cm == HashableDict.CONFLICT_KEEP_BOTH:
+                elif clean_cm is ConflictMethod.KEEP_ALL:
                     new_v = (v, other_v)
-                elif clean_cm == HashableDict.CONFLICT_KEEP_SAME:
+                elif clean_cm is ConflictMethod.KEEP_SAME:
                     if not equal(v, other_v):
                         continue
                     new_v = v
@@ -580,7 +567,7 @@ class HashableDict(dict):
         """
         return self.symmetric_difference(self, __other, inplace=inplace)
 
-    def _raise_key_error(self, key: Any, err_message: Optional[str] = None) -> NoReturn:
+    def _raise_key_error(self, key: HashableObject, err_message: Optional[str] = None) -> NoReturn:
         # Raise a KeyError with the string of the key, making sure the string isn't too large
         key_error_str = str(key)
         if len(key_error_str) > 200:
@@ -600,12 +587,64 @@ class HashableDict(dict):
                 "Self: %s, other: %s" % (self._ordered, __other._ordered))
         
         return __other
+    
+    @classmethod
+    def fromkeys(cls, keys: Iterable[HashableObject], value: Optional[HashableObject] = None, ordered: bool = False) -> Self:
+        """
+        Generates a new HashableDict from the given list of key objects. A value can optionally be passed as well which
+            will be used for each key (otherwise, values will be None).
+        :param keys: an iterable of key objects to use
+        :param value: if not None, then a single object to use as a value for all the keys. Otherwise if None, then all
+            keys will have None as their value
+        :param ordered: whether or not this HashableDict should be ordered
+        """
+        try:
+            dict_input = [(k, value) for k in keys]
+        except TypeError:
+            raise TypeError("Could not iterate through non-iterable type '%s' to generate keys." % type(keys))
+        
+        return HashableDict(dict_input=dict_input, ordered=ordered)
+    
+    @classmethod
+    def union_all(cls, *dicts: HashDictLike, conflict_method: ConflictMethod = 'keep_all', ordered: bool = False) -> Self:
+        """
+        Performs a union of an arbitrary number of HashableDict's (or HashDictLike objects).
+        :param dicts: the dictionaries
+        :param conflict_method: the method to use to determine how to keep the values that are in multiple dictionaries.
+            Possible values are:
+                - 'raise', 'err', 'raise_error', ... : raise an error on a key conflict (will be KeyError)
+                    NOTE: will not raise an error if the two objects are equal. Will call gstats_utils.pythonutils.equal() 
+                        to determine equality
+                - 'left', 'keep_left', 'self', ... : keep the value in this object, reject the value in other
+                - 'right', 'keep_right', 'other', ... : keep the value in the other (right) object, reject the value in 
+                    this object
+                - 'all', 'keep_all', 'tuple' : keep both values as a tuple of (this_value, other_value)
+            Could also be the associated HashableDict.ConflictMethods constant (EG: HashableDict.ConflictMethods.RAISE_ERROR)
+        :param ordered: if True, then objects that have an order must retain that same order to have the same hash,
+            otherwise, order of array-like objects doesn't matter.
+            NOTE: this does not apply to objects that are inherently unordered like sets and dictionary keys
+        """
+        conflict_method = _get_hashable_dict_conflict_method(conflict_method, dont_allow='same')
+        ret = HashableDict(ordered=ordered)
+
+        for d in dicts:
+            d = ret._ensure_compatible_kwargs(d)
+            
+            for k, v, key_hash in d._items_with_key_hashes():
+                curr_v = ret._get_value_with_hash(k, key_hash, default=_OBJECT_MISSING)
+                if conflict_method is not ConflictMethod.KEEP_RIGHT and curr_v is not _OBJECT_MISSING:
+                    if conflict_method is ConflictMethod.KEEP_LEFT:
+                        continue
+                    elif conflict_method
+                else:
+                    ret._set_key_with_hash(k, v, key_hash)
 
 
 
 # Get the conflict_method values and names
 _CONFLICT_METHOD_DICT = {getattr(HashableDict, k): k for k in dir(HashableDict) if k.startswith('CONFLICT_')}
-def _get_hashable_dict_conflict_method(conflict_method: ConflictMethod, dont_allow: Optional[Union[ConflictMethod, Sequence[ConflictMethod]]]=None) -> int:
+def _get_hashable_dict_conflict_method(conflict_method: ConflictMethod, 
+    dont_allow: Optional[Union[ConflictMethod, Sequence[ConflictMethod]]] = None) -> HashableDict.ConflictMethods:
     """
     Returns one of HashableDict.[CONFLICT_RAISE_ERROR, CONFLICT_KEEP_LEFT, CONFLICT_KEEP_RIGHT, CONFLICT_KEEP_BOTH]
         depending on the conflict_method input, and sanitizes
@@ -616,21 +655,13 @@ def _get_hashable_dict_conflict_method(conflict_method: ConflictMethod, dont_all
     # Parse how to deal with key conflicts
     if isinstance(conflict_method, str):
         clean_cm = conflict_method.lower().strip()
-        if re.fullmatch(r'(err(or)?|raise[ _-]?(err(or)?)?)', clean_cm) is not None:
-            clean_cm = HashableDict.CONFLICT_RAISE_ERROR
-        elif re.fullmatch(r'(keep[ -_]?)?(left|self)', clean_cm) is not None:
-            clean_cm = HashableDict.CONFLICT_KEEP_LEFT
-        elif re.fullmatch(r'(keep[ -_]?)?(right|other)', clean_cm) is not None:
-            clean_cm = HashableDict.CONFLICT_KEEP_RIGHT
-        elif re.fullmatch(r'(keep[ -_]?)?(both|tuple)', clean_cm) is not None:
-            clean_cm = HashableDict.CONFLICT_KEEP_BOTH
-        elif re.fullmatch(r'(keep[ -_]?)?(same)', clean_cm) is not None:
-            clean_cm = HashableDict.CONFLICT_KEEP_SAME
+        for cm in HashableDict.ConflictMethods:
+            if re.fullmatch(cm.value, clean_cm) is not None:
+                clean_cm = cm
+                break
         else:
             raise ValueError("Unknown conflict_method string: '%s'" % conflict_method)
-    elif isinstance(conflict_method, int):
-        if conflict_method not in _CONFLICT_METHOD_DICT:
-            raise ValueError("Unknown conflict_method int with value: %d" % conflict_method)
+    elif isinstance(conflict_method, HashableDict.ConflictMethods):
         clean_cm = conflict_method
     else:
         raise TypeError("Conflict_method must be of type str or int, not '%s'" % type(conflict_method))

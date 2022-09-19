@@ -1,3 +1,4 @@
+Hashing:
 - Make _raise_on_key_error and __str__ not take forever on large objects
 - Make it so you can't call dict() functions for future-proofness.
 - Add classmethods for larger mergings/operations on many dictionaries.
@@ -6,3 +7,7 @@
 - Add in apply() and aggregate() functions? (possibly class methods apply_all() and aggregate_all())
 - Allow for setting default values
 - Add all of the functionality into the docstring
+
+Other:
+- Take notes on python typing
+- Remember to use TypeGuard if needed
