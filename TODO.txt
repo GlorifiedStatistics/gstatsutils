@@ -1,12 +1,19 @@
-Hashing:
+BetterDict:
 - Make _raise_on_key_error and __str__ not take forever on large objects
 - Make it so you can't call dict() functions for future-proofness.
-- Add classmethods for larger mergings/operations on many dictionaries.
-- Allow for lambda on_collision method
+- Add in ability for static type checker to make sure all of the enum values are implemented for things like union, 
+    intersection, etc. I think this is done by having an extra call to a function that takes an input type of NoReturn?
+- Add in keeping a set of values for a conflict_method
 - Double check I've implemented all I need to
-- Add in apply() and aggregate() functions? (possibly class methods apply_all() and aggregate_all())
 - Allow for setting default values
+- Provide warning that changing key objects outside of the dict will break it
+- Make sure everything works on subclassed HashableDict as well
+- Do a pass over the code to check for efficiency/correctness
+
 - Add all of the functionality into the docstring
+
+Hashing:
+- Create other hashable/better objects?
 
 Other:
 - Take notes on python typing
