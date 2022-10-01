@@ -60,12 +60,14 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         KEEP_ALL = r'(keep[ -_]?)?(both|tuple|all)'
         KEEP_SAME = r'(keep[ -_]?)?(same)'
 
-    def __init__(self, dict_input: Optional[BetterDictLike] = None) -> None:
+    def __init__(self, dict_input: Optional[BetterDictLike] = None, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> None:
         """
         :param dict_input: if not None, then a dictionary-like object or a sequence of length-2 sequences like:
             [(key1, value1), (key2, value2), ...] to build the dictionary from. Otherwise if None, this dictionary will
             be initialized empty.
             NOTE: this input will be deep-copied if deep_copy_input is True, otherwise only references will be copied
+        :param default: if passed, then that value will be used by default any time a setitem or getitem method is
+            called and the key does not exist in the dictionary
         """
         if dict_input is not None:
             iterator = dict_input.items() if isinstance(dict_input, dict) else dict_input
@@ -80,12 +82,22 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         self._keys: dict[str, BetterDictObject] = {}
         self._values: dict[str, BetterDictObject] = {}
         self._hash_method = 'sha256'
+        self._default = default
     
-    def copy(self) -> Self:
+    def copy(self, deep=True) -> Self:
         """
-        Returns a deep copy of this dictionary, including copying the keys and values
+        Returns a copy of this dictionary.
+        :param deep: if True, both the keys and the values will be copied. Otherwise only the keys will be copied and
+            values will remain as the same references.
         """
-        return copy.deepcopy(self)
+        return copy.deepcopy(self) if deep else self._create_class_copy(self)
+    
+    def _create_class_copy(self, dict_input: Optional[BetterDictLike] = None, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY):
+        """
+        Creates an empty copy of self with the same parameters. Can optionally pass dict_input for input, and override 
+            parameters if needed.
+        """
+        return self.__class__(dict_input, default=default if default is _RAISE_ERR_ON_NO_KEY else self._default)
     
     def get_subset(self, keys: Iterable[Any], default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> BetterDictObject:
         """
@@ -94,11 +106,45 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         :param default: if a value is passed to default, then this value will be returned if the key does not exist. 
             Otherwise if nothing is passed and the key does not exist, then a KeyError will be raised
         """
-        ret = self.__class__()
+        ret = self._create_class_copy()
         for key in keys:
             key_hash = self._hash_key(key)
             ret._set_key_with_hash(key, self._get_value_with_hash(key, key_hash, default=default), key_hash)
         return ret
+    
+    def is_subset(self, other: BetterDictLike, proper: bool = False) -> bool:
+        """
+        Returns True if self is a subset of other, False otherwise
+        :param other: the other BetterDictLike object
+        :param proper: if True, then self must be a proper subset (IE: self is a subset of other without being equal to other)
+        """
+        other = self._ensure_better_dicts(other)
+
+        for key_hash in self._keys.keys():
+            if not other._contains_key_hash(key_hash):
+                return False
+        
+        return not proper or len(self) < len(other)
+
+    def is_proper_subset(self, other: BetterDictLike) -> bool:
+        """
+        Returns True if self is a proper subset of other
+        """
+        return self.is_subset(other, proper=True)
+    
+    def is_superset(self, other: BetterDictLike, proper: bool = False) -> bool:
+        """
+        Returns True if self is a superset of other, False otherwise
+        :param other: the other BetterDictLike object
+        :param proper: if True, then self must be a proper superset (IE: self is a superset of other without being equal to other)
+        """
+        return other.is_subset(self, proper=proper)
+
+    def is_proper_superset(self, other: BetterDictLike) -> bool:
+        """
+        Returns True if self is a proper superset of other
+        """
+        return self.is_superset(other, proper=True)
     
     def to_dict(self) -> dict:
         """
@@ -109,9 +155,6 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
             return {key: value for key, value in self.items()}
         except TypeError as e:
             raise TypeError("Could not convert %s to dict() due to error: %s" % (self.__class__.__name__, e))
-    
-    def __dict__(self) -> dict:
-        return self.to_dict()
     
     def clear(self) -> None:
         self._keys.clear()
@@ -150,15 +193,16 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
             Need the key in case we raise an error.
         :param key: the key
         :param key_hash: the key hash
-        :param default: if a value is passed to default, then this value will be returned if the key does not exist. 
-            Otherwise if nothing is passed and the key does not exist, then a KeyError will be raised
+        :param default: if a value is passed to default, then this value will be returned if the key does not exist (will
+            override self._default if passed). Otherwise if this dict has a default, then that value will be returned.
+            Otherwise if nothing is passed and the key does not exist, then a KeyError will be raised.
         """
         try:
             return self._values[key_hash]
         except KeyError:
-            if default is _RAISE_ERR_ON_NO_KEY:
-                self._raise_key_error(key)
-            return default
+            if default is not _RAISE_ERR_ON_NO_KEY:
+                return default
+            return self.__missing__(key)
     
     def _del_with_hash(self, key: BetterDictObject, key_hash: str, raise_err: bool = True) -> None:
         """
@@ -200,11 +244,53 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
     def __delitem__(self, key: BetterDictObject) -> None:
         self._del_with_hash(self._hash_key(key))
     
+    def __missing__(self, key: BetterDictObject) -> Any:
+        """
+        Attempt to return self._default, otherwise raise error.
+        """
+        if self._default is _RAISE_ERR_ON_NO_KEY:
+            self._raise_key_error(key)
+        return self._default
+    
     def __contains__(self, key: BetterDictObject) -> bool:
         return self._contains_key_hash(self._hash_key(key))
     
     def __len__(self) -> int:
         return len(self._keys)
+    
+    def __eq__(self, __other: BetterDictLike) -> bool:
+        """
+        Returns True if the two BetterDictLike objects contain the exact same information (IE: ignores BetterDict parameters like
+            _default value, but relies on objects having the same hash iff they are equal). Determines equality of keys/objects 
+            using pythonutils.equality.equal().
+        """
+        try:
+            __other = self._ensure_better_dicts(__other)
+        except (ValueError, TypeError):
+            return False
+
+        if len(self) != len(__other):
+            return False
+        
+        for key, value, key_hash in self._items_with_key_hashes():
+            if not __other._contains_key_hash(key_hash) or not equal(value, __other._get_value_with_hash(key, key_hash)):
+                return False
+        
+        return True
+    
+    def __ne__(self, __other: BetterDictLike) -> bool:
+        """
+        See __eq__ for description on how BetterDict equality is determined.
+        """
+        return not self.__eq__(__other)
+    
+    def __hash__(self) -> int:
+        """
+        Python __hash__ returns int. Uses pythonutils.hashing.hash_object() to hash.
+        NOTE: two BetterDicts may be equal using __eq__ but have different hashes since __eq__ does not take into account
+            things like BetterDict parameters (like self._default), but __hash__ does.
+        """
+        return hash_object([self._keys, self._values, self._default, self._hash_method], return_type=int)
     
     def get(self, key: BetterDictObject, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Union[BetterDictObject, Any]:
         """
@@ -214,12 +300,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         :param default: if a value is passed to default, then this value will be returned if the key does not exist. 
             Otherwise if nothing is passed and the key does not exist, then a KeyError will be raised
         """
-        try:
-            return self[key]
-        except KeyError:
-            if default is _RAISE_ERR_ON_NO_KEY:
-                self._raise_key_error(key)
-            return default
+        return self._get_value_with_hash(key, self._hash_key(key), default=default)
     
     def pop(self, key: BetterDictObject, default: Union[Any, _RaiseErrorOnNoKey] = _RAISE_ERR_ON_NO_KEY) -> Union[BetterDictObject, Any]:
         """
@@ -230,21 +311,13 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
             nothing will be popped/deleted). Otherwise if nothing is passed and the key does not exist, then a KeyError 
             will be raised
         """
-        try:
-            key_hash = self._hash_key(key)
-            ret = self._get_value_with_hash(key, key_hash)
-            self._del_with_hash(key, key_hash)
-            return ret
-        except KeyError:
-            if default is _RAISE_ERR_ON_NO_KEY:
-                self._raise_key_error(key)
-            return default
+        key_hash = self._hash_key(key)
+        ret = self._get_value_with_hash(key, key_hash, default=default)
+        self._del_with_hash(key, key_hash, raise_err=False)
+        return ret
     
     def __iter__(self) -> Iterator[BetterDictObject]:
         return iter(self.keys())
-    
-    def __reversed__(self) -> Iterator[BetterDictObject]:
-        return reversed(self.keys())
     
     def __or__(self, __value: BetterDictLike) -> Self:
         """
@@ -373,7 +446,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
             self.clear()
             for new_k, new_v in new_k_v:
                 self[new_k] = new_v
-        return self.__class__([(v, k) for k, v in self.items()])
+        return self._create_class_copy([(v, k) for k, v in self.items()])
     
     def invert(self, inplace: bool = False) -> Self:
         """
@@ -402,12 +475,12 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         """
         # In case the user doesn't pass anything, or passes one dict
         if len(dicts) == 0:
-            return self if inplace else self.__class__(self)
+            return self if inplace else self._create_class_copy(self)
         
         conflict_method = _get_better_dict_conflict_method(conflict_method, dont_allow='same')
         dicts = self._ensure_better_dicts(dicts)
 
-        working_dict = self if inplace else self.__class__(self)
+        working_dict = self if inplace else self._create_class_copy(self)
 
         for d in dicts:            
             for k, v, key_hash in d._items_with_key_hashes():
@@ -432,7 +505,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         # Call the conflict_method on all _KeepAllTuple's if it is a callable
         if not isinstance(conflict_method, BetterDict.ConflictMethodsEnum):
             for k, v, key_hash in self._items_with_key_hashes():
-                if isinstance(v, _KeepAllTuple):
+                if type(curr_v) is _KeepAllTuple:
                     self._set_key_with_hash(k, conflict_method(v), key_hash)
         
         return working_dict
@@ -463,7 +536,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         """
         # In case the user doesn't pass anything
         if len(dicts) == 0:
-            return self if inplace else self.__class__(self)
+            return self if inplace else self._create_class_copy(self)
         
         conflict_method = _get_better_dict_conflict_method(conflict_method, dont_allow='same')
 
@@ -560,7 +633,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         """
         # In case the user doesn't pass anything
         if len(dicts) == 0:
-            return self if inplace else self.__class__(self)
+            return self if inplace else self._create_class_copy(self)
 
         dicts = self._ensure_better_dicts(dicts)
         
@@ -598,7 +671,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         """
         # In case the user doesn't pass anything
         if len(dicts) == 0:
-            return self if inplace else self.__class__(self)
+            return self if inplace else self._create_class_copy(self)
 
         dicts = self._ensure_better_dicts(dicts)
 
@@ -618,7 +691,7 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         
         # Otherwise we create a new dictionary and add to it
         else:
-            working_dict = self.__class__(self)
+            working_dict = self._create_class_copy(self)
 
         # Remove all the keys in self since those are already accounted for
         unique_key_hashes = unique_key_hashes.difference(self._keys.keys())
@@ -682,28 +755,32 @@ class BetterDict(dict[BetterDictObject, BetterDictObject]):
         return [d if isinstance(d, cls) else cls(d) for d in dicts]
     
     @classmethod
-    def fromkeys(cls, keys: Iterable[BetterDictObject], value: Optional[BetterDictObject] = None) -> Self:
+    def fromkeys(cls, keys: Iterable[BetterDictObject], value: Optional[BetterDictObject] = None, 
+        default: Union[Any, _RAISE_ERR_ON_NO_KEY] = _RAISE_ERR_ON_NO_KEY) -> Self:
         """
         Generates a new BetterDict from the given list of key objects. A value can optionally be passed as well which
             will be used for each key (otherwise, values will be None).
         :param keys: an iterable of key objects to use
         :param value: if not None, then a single object to use as a value for all the keys. Otherwise if None, then all
             keys will have None as their value
+        :param default: if passed, then that value will be used by default any time a setitem or getitem method is
+            called and the key does not exist in the dictionary
         """
         try:
             dict_input = [(k, value) for k in keys]
         except TypeError:
             raise TypeError("Could not iterate through non-iterable type '%s' to generate keys." % type(keys))
         
-        return cls(dict_input=dict_input)
+        return cls(dict_input=dict_input, default=default)
     
     @classmethod
-    def _from_keys_and_hashes(cls, kvh: Iterable[tuple(BetterDictObject, BetterDictObject, str)]):
+    def _from_keys_and_hashes(cls, kvh: Iterable[tuple(BetterDictObject, BetterDictObject, str)],
+        default: Union[Any, _RAISE_ERR_ON_NO_KEY] = _RAISE_ERR_ON_NO_KEY) -> Self:
         """
         Builds a new instance of cls using keys, values, and key_hashes. Expects input in the same way it would be
             recieved from cls()._items_with_key_hashes().
         """
-        ret = cls()
+        ret = cls(default=default)
         for k, v, key_hash in kvh:
             ret._set_key_with_hash(k, v, key_hash)
         return ret

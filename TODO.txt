@@ -1,14 +1,11 @@
 BetterDict:
 - Make _raise_on_key_error and __str__ not take forever on large objects
-- Make it so you can't call dict() functions for future-proofness.
-- Add in ability for static type checker to make sure all of the enum values are implemented for things like union, 
-    intersection, etc. I think this is done by having an extra call to a function that takes an input type of NoReturn?
 - Add in keeping a set of values for a conflict_method
-- Double check I've implemented all I need to
-- Allow for setting default values
 - Provide warning that changing key objects outside of the dict will break it
 - Make sure everything works on subclassed HashableDict as well
 - Do a pass over the code to check for efficiency/correctness
+- make pretty printing of this default
+- make pickleable
 
 - Add all of the functionality into the docstring
 
@@ -18,3 +15,8 @@ Hashing:
 Other:
 - Take notes on python typing
 - Remember to use TypeGuard if needed
+- add in functions for progressbars in and out of notebooks
+- multiprocessing progress pool?
+- allow hash_object to return int as well as string (return_type=str, can be int, str, 'int', 'str', etc.)
+- add in hash_obj alias
+- add in a strictly_equal() that cares about exact types and whatnot?

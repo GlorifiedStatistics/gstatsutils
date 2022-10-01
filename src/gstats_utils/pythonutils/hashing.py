@@ -19,7 +19,7 @@ class SupportsHashing(Protocol):
         pass
 
 
-def hash_object(obj: HashableObject, ordered: bool = False, method: str = 'sha256') -> int:
+def hash_object(obj: HashableObject, method: str = 'sha256') -> int:
     """
     Hashes the given python object. Recursive-object safe. Can pass pre-made hasher objects for specific args/kwargs
         on creation, and can return the hasher object upon completion instead of hexdigest() if needed.
