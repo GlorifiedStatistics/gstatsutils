@@ -11,7 +11,7 @@ test until I am reasonably certain those objects are checked correctly up until 
 equality, and assume those will be tested correctly.
 """
 
-from gstats_utils.pythonutils.equality import EqualityError, equal
+from gstatsutils.pythonutils.equality import EqualityError, equal
 from enum import Enum
 from itertools import product
 import numpy as np
