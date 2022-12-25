@@ -19,6 +19,9 @@ SimpleNamespace = type(sys.implementation)
 DictKeysType = type({}.keys())
 DictValuesType = type({}.values())
 
+# A list of all singleton objects
+SingletonObjects = [None, Ellipsis, NotImplemented]
+
 def _cell_factory():
     a = 1
     def f():
