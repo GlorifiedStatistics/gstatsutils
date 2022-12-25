@@ -1,3 +1,5 @@
+# NOTE: run from parent directory to copy requirements
+
 FROM ubuntu:20.04
  
 ENV DEBIAN_FRONTEND noninteractive
@@ -31,11 +33,15 @@ RUN apt-get update \
  
 # Install ``pyenv``.
 RUN git clone https://github.com/pyenv/pyenv /root/.pyenv
+
+# Add in all requirements
+RUN mkdir /root/requirements
+COPY ./requirements* /root/requirements/
  
 # Install the desired versions of Python.
 RUN for PYTHON_VERSION in 3.5.10 3.6.15 3.7.16 3.8.16 3.9.16 3.10.9 3.11.1; do \
  set -ex \
    && /root/.pyenv/bin/pyenv install ${PYTHON_VERSION} \ 
    && /root/.pyenv/versions/${PYTHON_VERSION}/bin/python -m pip install --upgrade pip \
-   && /root/.pyenv/versions/${PYTHON_VERSION}/bin/python -m pip install  \
+   && for req_file in /root/requirements/*; do /root/.pyenv/versions/${PYTHON_VERSION}/bin/python -m pip install -r $req_file; done \
  ; done
