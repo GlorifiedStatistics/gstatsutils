@@ -112,7 +112,7 @@ def test_bytes_like():
     # Strings
     _check_equal('a', 'a')
     _check_equal('', '')
-    _check_equal('a' * 10_000, 'a' * 10_000)
+    _check_equal('a' * 10000, 'a' * 10000)
     _check_equal('apples', ''.join(['a', 'p', 'p', 'l', 'e', 's']))
 
     _check_equal('apples', bytes('apples', 'utf-8'), expected_value=False)

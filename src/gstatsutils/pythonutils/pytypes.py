@@ -38,8 +38,14 @@ _c = _c()
 CoroutineType = type(_c)
 _c.close()  # Prevent ResourceWarning
 
+
+_ag = lambda: None
+if sys.version >= "3.6":
+    s = """
 async def _ag():
     yield
+    """
+    exec(s)
 _ag = _ag()
 AsyncGeneratorType = type(_ag)
 
