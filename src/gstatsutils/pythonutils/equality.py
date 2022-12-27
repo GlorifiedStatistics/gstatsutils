@@ -296,8 +296,14 @@ def equal(a: 'Any', b: 'Any', selector: 'Optional[str]' = None, strict_types: 'b
             elif isinstance(a, DictValuesType):
                 return _check_with_conversion(a, list, b, None, unordered=True, raise_err=raise_err, strict_types=strict_types)
             
+            # Otherwise, use the default equality measure
             else:
-                return _eq_check(a == b, a, b, raise_err, message='Using built-in __eq__ equality measure')
+                try:
+                    return _eq_check(a == b, a, b, raise_err, message='Using built-in __eq__ equality measure')
+                except EqualityError:  # If we get an equality error, then raise_err must be true
+                    raise EqualityError(a, b, message="Values were not equal using built-in __eq__ method")
+                except Exception:
+                    raise EqualityCheckingError("Could not determine equality between dictionary values using built-in __eq__ method")
         
         except EqualityError:
             raise
