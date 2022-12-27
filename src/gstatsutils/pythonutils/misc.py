@@ -37,28 +37,29 @@ class _TimeoutFuncThread(Thread):
         self._return = self._func(*self._args, **self._kwargs)
 
 
-def timeout_wrapper(func: 'Callable[TimeoutParamSpec, TimeoutReturnType]', timeout: 'float' = 3, timeout_ret_val: 'Any' = None):
+def timeout_wrapper(timeout: 'float' = 3, timeout_ret_val: 'Any' = None):
     """
     Wraps a function to allow for timing-out after the specified time. If the function has not completed after timeout
         seconds, then the function will be terminated.
     """
-    
-    def wraped_func(*args: 'TimeoutParamSpec.args', **kwargs: 'TimeoutParamSpec.kwargs') -> 'Union[TimeoutReturnType, TimeoutErrReturnType]':
-        thread = _TimeoutFuncThread(func, *args, **kwargs)
-        thread.start()
+    def decorator(func: 'Callable[TimeoutParamSpec, TimeoutReturnType]') -> 'Callable[TimeoutParamSpec, Union[TimeoutReturnType, TimeoutErrReturnType]]':
+        def wraped_func(*args: 'TimeoutParamSpec.args', **kwargs: 'TimeoutParamSpec.kwargs') -> 'Union[TimeoutReturnType, TimeoutErrReturnType]':
+            thread = _TimeoutFuncThread(func, *args, **kwargs)
+            thread.start()
 
-        init_time = time.time()
-        sleep_time = 1e-8
-        while time.time() - init_time < timeout:
-            if thread.is_alive():
-                print("Sleeping for:", sleep_time)
-                time.sleep(sleep_time)
-                sleep_time = min(0.1, sleep_time * 1.05)
-            else:
-                return thread._return
-        
-        # If we make it here, there is an error, return value
-        return timeout_ret_val
+            init_time = time.time()
+            sleep_time = 1e-8
+            while time.time() - init_time < timeout:
+                if thread.is_alive():
+                    print("Sleeping for:", sleep_time)
+                    time.sleep(sleep_time)
+                    sleep_time = min(0.1, sleep_time * 1.05)
+                else:
+                    return thread._return
+
+            # If we make it here, there is an error, return value
+            return timeout_ret_val
     
-    return wraped_func
+        return wraped_func
+    return decorator 
     
