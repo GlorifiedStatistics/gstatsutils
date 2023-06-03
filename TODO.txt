@@ -24,3 +24,18 @@ Other:
 - munge inputs module with:
     - check strings
     - mutually exclusive inputs
+    
+    
+Confusion matrix:
+import matplotlib.pyplot as plt
+from sklearn.metrics import ConfusionMatrixDisplay
+
+conf_mat, labels = None, None
+
+conf_mat = conf_mat / conf_mat.sum(axis=0)
+conf_mat = conf_mat / conf_mat.sum(axis=1)
+disp = ConfusionMatrixDisplay(conf_mat, display_labels=labels)
+disp.plot()
+
+plt.title('Title')
+plt.show()
