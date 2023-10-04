@@ -1,13 +1,4 @@
-BetterDict:
-- Make _raise_on_key_error and __str__ not take forever on large objects
-- Add in keeping a set of values for a conflict_method
-- Provide warning that changing key objects outside of the dict will break it
-- Make sure everything works on subclassed HashableDict as well
-- Do a pass over the code to check for efficiency/correctness
-- make pretty printing of this default
-- make pickleable
 
-- Add all of the functionality into the docstring
 
 Hashing:
 - Create other hashable/better objects?
@@ -21,6 +12,9 @@ Other:
 - add in hash_obj alias
 - add in a strictly_equal() that cares about exact types and whatnot?
 - multiprocessing threadpool things and map_with_progress
+- Make easier subprocessing with better guards for dealing with stdin/out and very large inputs/outputs
+- scripting system that can execute multiple bash lines in parallel, await finish, run others, wait for time, ssh into other machines to start things, etc.
+- make thing that can search through set of machines calling nvidia-smi to get open machines
 - munge inputs module with:
     - check strings
     - mutually exclusive inputs
