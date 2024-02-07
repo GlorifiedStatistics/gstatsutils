@@ -18,6 +18,7 @@ Other:
 - munge inputs module with:
     - check strings
     - mutually exclusive inputs
+- multi-layer progress bars
     
     
 Confusion matrix:
