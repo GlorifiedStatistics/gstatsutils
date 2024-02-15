@@ -12,6 +12,7 @@ Other:
 - add in hash_obj alias
 - add in a strictly_equal() that cares about exact types and whatnot?
 - multiprocessing threadpool things and map_with_progress
+    - Maybe even make it multi-nodeable
 - Make easier subprocessing with better guards for dealing with stdin/out and very large inputs/outputs
 - scripting system that can execute multiple bash lines in parallel, await finish, run others, wait for time, ssh into other machines to start things, etc.
 - make thing that can search through set of machines calling nvidia-smi to get open machines
@@ -19,6 +20,9 @@ Other:
     - check strings
     - mutually exclusive inputs
 - multi-layer progress bars
+- parameter_saver
+- dataset splitter with ints, floats, dict, etc.
+- chaining of operations on things that return None instead of self
     
     
 Confusion matrix:
