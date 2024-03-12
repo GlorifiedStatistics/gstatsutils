@@ -23,6 +23,7 @@ Other:
 - parameter_saver
 - dataset splitter with ints, floats, dict, etc.
 - chaining of operations on things that return None instead of self
+- multiprocessing pool where you can select whether or not you want 'daemon' subprocesses, maybe max subprocess depth?
     
     
 Confusion matrix:
