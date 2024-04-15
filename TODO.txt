@@ -25,6 +25,7 @@ Other:
 - chaining of operations on things that return None instead of self
 - multiprocessing pool where you can select whether or not you want 'daemon' subprocesses, maybe max subprocess depth?
 - non-numpy array_split so we can get around numpy's type coersion fails...
+- clean-printing function for debugging purposes that will compress things like lists and whatnot to not be too large in output
     
     
 Confusion matrix:
